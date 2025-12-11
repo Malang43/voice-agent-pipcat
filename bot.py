@@ -4,17 +4,15 @@
 # SPDX-License-Identifier: BSD 2-Clause License
 #
 
-"""Pipecat Quickstart Example.
+"""Pipecat Quickstart Example (HuggingFace Version).
 
-The example runs a simple voice AI bot that you can connect to using your
-browser and speak with it. You can also deploy this bot to Pipecat Cloud.
+This example runs a simple voice AI bot using:
 
-Required AI services:
-- Deepgram (Speech-to-Text)
-- OpenAI (LLM)
-- Cartesia (Text-to-Speech)
+- Whisper (Speech-to-Text) via HF API
+- Qwen 1.5B (LLM) via HF API
+- Kokoro (Text-to-Speech) via HF API
 
-Run the bot using::
+Run with:
 
     uv run bot.py
 """
@@ -48,11 +46,14 @@ from pipecat.processors.aggregators.llm_response_universal import LLMContextAggr
 from pipecat.processors.frameworks.rtvi import RTVIConfig, RTVIObserver, RTVIProcessor
 from pipecat.runner.types import RunnerArguments
 from pipecat.runner.utils import create_transport
-from pipecat.services.cartesia.tts import CartesiaTTSService
-from pipecat.services.deepgram.stt import DeepgramSTTService
-from pipecat.services.openai.llm import OpenAILLMService
+
+# ⬇️ Replace API-based services with HuggingFace local wrappers
+from services.hf_stt import HFWhisperSTTService
+from services.hf_llm import HFQwenLLMService
+from services.hf_tts import HFKokoroTTSService
+
 from pipecat.transports.base_transport import BaseTransport, TransportParams
-from pipecat.transports.daily.transport import DailyParams
+
 
 logger.info("✅ All components loaded successfully!")
 
@@ -60,16 +61,14 @@ load_dotenv(override=True)
 
 
 async def run_bot(transport: BaseTransport, runner_args: RunnerArguments):
-    logger.info(f"Starting bot")
+    logger.info("Starting bot (HuggingFace mode)")
 
-    stt = DeepgramSTTService(api_key=os.getenv("DEEPGRAM_API_KEY"))
-
-    tts = CartesiaTTSService(
-        api_key=os.getenv("CARTESIA_API_KEY"),
-        voice_id="71a7ad14-091c-4e8e-a314-022ece01c121",  # British Reading Lady
-    )
-
-    llm = OpenAILLMService(api_key=os.getenv("OPENAI_API_KEY"))
+    # -------------------------------
+    # Replace with HuggingFace services
+    # -------------------------------
+    stt = HFWhisperSTTService()
+    llm = HFQwenLLMService()
+    tts = HFKokoroTTSService()
 
     messages = [
         {
@@ -85,14 +84,14 @@ async def run_bot(transport: BaseTransport, runner_args: RunnerArguments):
 
     pipeline = Pipeline(
         [
-            transport.input(),  # Transport user input
-            rtvi,  # RTVI processor
+            transport.input(),
+            rtvi,
             stt,
-            context_aggregator.user(),  # User responses
-            llm,  # LLM
-            tts,  # TTS
-            transport.output(),  # Transport bot output
-            context_aggregator.assistant(),  # Assistant spoken responses
+            context_aggregator.user(),
+            llm,
+            tts,
+            transport.output(),
+            context_aggregator.assistant(),
         ]
     )
 
@@ -107,24 +106,22 @@ async def run_bot(transport: BaseTransport, runner_args: RunnerArguments):
 
     @transport.event_handler("on_client_connected")
     async def on_client_connected(transport, client):
-        logger.info(f"Client connected")
-        # Kick off the conversation.
-        messages.append({"role": "system", "content": "Say hello and briefly introduce yourself."})
+        logger.info("Client connected")
+        messages.append(
+            {"role": "system", "content": "Say hello and briefly introduce yourself."}
+        )
         await task.queue_frames([LLMRunFrame()])
 
     @transport.event_handler("on_client_disconnected")
     async def on_client_disconnected(transport, client):
-        logger.info(f"Client disconnected")
+        logger.info("Client disconnected")
         await task.cancel()
 
     runner = PipelineRunner(handle_sigint=runner_args.handle_sigint)
-
     await runner.run(task)
 
 
 async def bot(runner_args: RunnerArguments):
-    """Main bot entry point for the bot starter."""
-
     transport_params = {
         "daily": lambda: DailyParams(
             audio_in_enabled=True,
@@ -141,7 +138,6 @@ async def bot(runner_args: RunnerArguments):
     }
 
     transport = await create_transport(runner_args, transport_params)
-
     await run_bot(transport, runner_args)
 
 
